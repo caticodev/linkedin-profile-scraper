@@ -2,7 +2,6 @@ import puppeteer, { Page, Browser } from 'puppeteer'
 import treeKill from 'tree-kill';
 
 import blockedHostsList from './blocked-hosts';
-
 import { getDurationInDays, formatDate, getCleanText, getLocationFromText, statusLog, getHostname } from './utils'
 import { SessionExpired } from './errors';
 
@@ -70,28 +69,26 @@ export interface Education {
   durationInDays: number | null;
 }
 
-interface RawVolunteerExperience {
+interface RawCertification {
   title: string | null;
   company: string | null;
-  startDate: string | null;
-  endDate: string | null;
-  endDateIsPresent: boolean;
-  description: string | null;
+  issueDate: string | null;
+  expireDate: string | null;
+  id: string | null;
+  url: string | null;
 }
 
-export interface VolunteerExperience {
+export interface Certification {
   title: string | null;
   company: string | null;
-  startDate: string | null;
-  endDate: string | null;
-  endDateIsPresent: boolean;
-  durationInDays: number | null;
-  description: string | null;
+  issueDate: string | null;
+  expireDate: string | null;
+  id: string | null;
+  url: string | null;
 }
 
 export interface Skill {
   skillName: string | null;
-  endorsementCount: number | null;
 }
 
 interface ScraperUserDefinedOptions {
@@ -180,11 +177,11 @@ export class LinkedInProfileScraper {
     if (!userDefinedOptions.sessionCookieValue) {
       throw new Error(`${errorPrefix} Option "sessionCookieValue" is required.`);
     }
-    
+
     if (userDefinedOptions.sessionCookieValue && typeof userDefinedOptions.sessionCookieValue !== 'string') {
       throw new Error(`${errorPrefix} Option "sessionCookieValue" needs to be a string.`);
     }
-    
+
     if (userDefinedOptions.userAgent && typeof userDefinedOptions.userAgent !== 'string') {
       throw new Error(`${errorPrefix} Option "userAgent" needs to be a string.`);
     }
@@ -192,11 +189,11 @@ export class LinkedInProfileScraper {
     if (userDefinedOptions.keepAlive !== undefined && typeof userDefinedOptions.keepAlive !== 'boolean') {
       throw new Error(`${errorPrefix} Option "keepAlive" needs to be a boolean.`);
     }
-   
+
     if (userDefinedOptions.timeout !== undefined && typeof userDefinedOptions.timeout !== 'number') {
       throw new Error(`${errorPrefix} Option "timeout" needs to be a number.`);
     }
-    
+
     if (userDefinedOptions.headless !== undefined && typeof userDefinedOptions.headless !== 'boolean') {
       throw new Error(`${errorPrefix} Option "headless" needs to be a boolean.`);
     }
@@ -527,76 +524,26 @@ export class LinkedInProfileScraper {
 
       statusLog(logSection, 'LinkedIn profile page loaded!', scraperSessionId)
 
-      statusLog(logSection, 'Getting all the LinkedIn profile data by scrolling the page to the bottom, so all the data gets loaded into the page...', scraperSessionId)
-
-      await autoScroll(page);
-
       statusLog(logSection, 'Parsing data...', scraperSessionId)
-
-      // Only click the expanding buttons when they exist
-      const expandButtonsSelectors = [
-        '.pv-profile-section.pv-about-section .lt-line-clamp__more', // About
-        '#experience-section .pv-profile-section__see-more-inline.link', // Experience
-        '.pv-profile-section.education-section button.pv-profile-section__see-more-inline', // Education
-        '.pv-skill-categories-section [data-control-name="skill_details"]', // Skills
-      ];
-
-      const seeMoreButtonsSelectors = ['.pv-entity__description .lt-line-clamp__line.lt-line-clamp__line--last .lt-line-clamp__more[href="#"]', '.lt-line-clamp__more[href="#"]:not(.lt-line-clamp__ellipsis--dummy)']
-
-      statusLog(logSection, 'Expanding all sections by clicking their "See more" buttons', scraperSessionId)
-
-      for (const buttonSelector of expandButtonsSelectors) {
-        try {
-          if (await page.$(buttonSelector) !== null) {
-            statusLog(logSection, `Clicking button ${buttonSelector}`, scraperSessionId)
-            await page.click(buttonSelector);
-          }
-        } catch (err) {
-          statusLog(logSection, `Could not find or click expand button selector "${buttonSelector}". So we skip that one.`, scraperSessionId)
-        }
-      }
-      
-
-      // To give a little room to let data appear. Setting this to 0 might result in "Node is detached from document" errors
-      await page.waitFor(100);
-
-      statusLog(logSection, 'Expanding all descriptions by clicking their "See more" buttons', scraperSessionId)
-
-      for (const seeMoreButtonSelector of seeMoreButtonsSelectors) {
-        const buttons = await page.$$(seeMoreButtonSelector)
-
-        for (const button of buttons) {
-          if (button) {
-            try {
-              statusLog(logSection, `Clicking button ${seeMoreButtonSelector}`, scraperSessionId)
-              await button.click()
-            } catch (err) {
-              statusLog(logSection, `Could not find or click see more button selector "${button}". So we skip that one.`, scraperSessionId)
-            }
-          }
-        }
-      }
 
       statusLog(logSection, 'Parsing profile data...', scraperSessionId)
 
       const rawUserProfileData: RawProfile = await page.evaluate(() => {
-        const profileSection = document.querySelector('.pv-top-card')
-
         const url = window.location.href
 
-        const fullNameElement = profileSection?.querySelector('.pv-top-card--list li:first-child')
+        const fullNameElement = document.querySelector('.pv-top-card h1')
         const fullName = fullNameElement?.textContent || null
 
-        const titleElement = profileSection?.querySelector('h2')
+        const titleElement = document.querySelector('.pv-top-card .pv-text-details__left-panel div:nth-child(2)')
         const title = titleElement?.textContent || null
 
-        const locationElement = profileSection?.querySelector('.pv-top-card--list.pv-top-card--list-bullet.mt1 li:first-child')
+        const locationElement = document.querySelector('.pv-top-card .pv-text-details__left-panel.mt2 .t-black--light')
         const location = locationElement?.textContent || null
 
-        const photoElement = profileSection?.querySelector('.pv-top-card__photo') || profileSection?.querySelector('.profile-photo-edit__preview')
+        const photoElement = document.querySelector('.pv-top-card-profile-picture__image')
         const photo = photoElement?.getAttribute('src') || null
 
-        const descriptionElement = document.querySelector('.pv-about__summary-text .lt-line-clamp__raw-line') // Is outside "profileSection"
+        const descriptionElement = document.querySelector('.pv-shared-text-with-see-more span.visually-hidden') // Is outside "profileSection"
         const description = descriptionElement?.textContent || null
 
         return {
@@ -623,35 +570,41 @@ export class LinkedInProfileScraper {
 
       statusLog(logSection, `Parsing experiences data...`, scraperSessionId)
 
-      const rawExperiencesData: RawExperience[] = await page.$$eval('#experience-section ul > .ember-view', (nodes) => {
+      await page.goto(`${profileUrl}/details/experience/`, {
+        // Use "networkidl2" here and not "domcontentloaded". 
+        // As with "domcontentloaded" some elements might not be loaded correctly, resulting in missing data.
+        waitUntil: 'networkidle2',
+        timeout: this.options.timeout
+      });
+
+      const rawExperiencesData: RawExperience[] = await page.$$eval('ul.pvs-list > li.pvs-list__paged-list-item', (nodes) => {
         let data: RawExperience[] = []
 
         // Using a for loop so we can use await inside of it
         for (const node of nodes) {
-          const titleElement = node.querySelector('h3');
+          const titleElement = node.querySelector('.t-bold span.visually-hidden');
           const title = titleElement?.textContent || null
 
-          const employmentTypeElement = node.querySelector('span.pv-entity__secondary-title');
-          const employmentType = employmentTypeElement?.textContent || null
+          const employmentElement = node.querySelector('.t-14:nth-child(2) span.visually-hidden');
+          const employmentText = employmentElement?.textContent || null
 
-          const companyElement = node.querySelector('.pv-entity__secondary-title');
-          const companyElementClean = companyElement && companyElement?.querySelector('span') ? companyElement?.removeChild(companyElement.querySelector('span') as Node) && companyElement : companyElement || null;
-          const company = companyElementClean?.textContent || null
+          const company = employmentText?.split('·')[0]?.trim() || null
+          const employmentType = employmentText?.split('·')[1]?.trim() || null
 
-          const descriptionElement = node.querySelector('.pv-entity__description');
+          const descriptionElement = node.querySelector('.pvs-list__outer-container li.pvs-list__item--one-column:nth-child(1)');
           const description = descriptionElement?.textContent || null
 
-          const dateRangeElement = node.querySelector('.pv-entity__date-range span:nth-child(2)');
-          const dateRangeText = dateRangeElement?.textContent || null
+          const dateRangeElement = node.querySelector('.t-14:nth-child(3) span.visually-hidden');
+          const dateRangeText = dateRangeElement?.textContent?.split('·')[0] || null
 
-          const startDatePart = dateRangeText?.split('–')[0] || null;
+          const startDatePart = dateRangeText?.split('-')[0] || null;
           const startDate = startDatePart?.trim() || null;
 
-          const endDatePart = dateRangeText?.split('–')[1] || null;
+          const endDatePart = dateRangeText?.split('-')[1] || null;
           const endDateIsPresent = endDatePart?.trim().toLowerCase() === 'present' || false;
           const endDate = (endDatePart && !endDateIsPresent) ? endDatePart.trim() : 'Present';
 
-          const locationElement = node.querySelector('.pv-entity__location span:nth-child(2)');
+          const locationElement = node.querySelector('.t-14:nth-child(4) span.visually-hidden');
           const location = locationElement?.textContent || null;
 
           data.push({
@@ -698,31 +651,36 @@ export class LinkedInProfileScraper {
 
       statusLog(logSection, `Parsing education data...`, scraperSessionId)
 
-      const rawEducationData: RawEducation[] = await page.$$eval('#education-section ul > .ember-view', (nodes) => {
+      await page.goto(`${profileUrl}/details/education/`, {
+        // Use "networkidl2" here and not "domcontentloaded". 
+        // As with "domcontentloaded" some elements might not be loaded correctly, resulting in missing data.
+        waitUntil: 'networkidle2',
+        timeout: this.options.timeout
+      });
+
+      const rawEducationData: RawEducation[] = await page.$$eval('ul.pvs-list > li.pvs-list__paged-list-item', (nodes) => {
         // Note: the $$eval context is the browser context.
         // So custom methods you define in this file are not available within this $$eval.
         let data: RawEducation[] = []
         for (const node of nodes) {
 
-          const schoolNameElement = node.querySelector('h3.pv-entity__school-name');
+          const schoolNameElement = node.querySelector('.t-bold span.visually-hidden');
           const schoolName = schoolNameElement?.textContent || null;
 
-          const degreeNameElement = node.querySelector('.pv-entity__degree-name .pv-entity__comma-item');
-          const degreeName = degreeNameElement?.textContent || null;
+          const degreeElement = node.querySelector('.t-14:nth-child(2) span.visually-hidden');
+          const degreeText = degreeElement?.textContent || null;
 
-          const fieldOfStudyElement = node.querySelector('.pv-entity__fos .pv-entity__comma-item');
-          const fieldOfStudy = fieldOfStudyElement?.textContent || null;
+          const degreeName = degreeText?.split(',')[0]?.trim() || null;
+          const fieldOfStudy = degreeText?.split(',')[1]?.trim() || null;
 
           // const gradeElement = node.querySelector('.pv-entity__grade .pv-entity__comma-item');
           // const grade = (gradeElement && gradeElement.textContent) ? window.getCleanText(fieldOfStudyElement.textContent) : null;
 
-          const dateRangeElement = node.querySelectorAll('.pv-entity__dates time');
+          const dateRangeElement = node.querySelector('.t-14:nth-child(3) span.visually-hidden');
 
-          const startDatePart = dateRangeElement && dateRangeElement[0]?.textContent || null;
-          const startDate = startDatePart || null
-
-          const endDatePart = dateRangeElement && dateRangeElement[1]?.textContent || null;
-          const endDate = endDatePart || null
+          const dateRangeText = dateRangeElement?.textContent || null;
+          const startDate = dateRangeText?.split('-')[0]?.trim() || null
+          const endDate = dateRangeText?.split('-')[1]?.trim() || null
 
           data.push({
             schoolName,
@@ -755,39 +713,48 @@ export class LinkedInProfileScraper {
 
       statusLog(logSection, `Got education data: ${JSON.stringify(education)}`, scraperSessionId)
 
-      statusLog(logSection, `Parsing volunteer experience data...`, scraperSessionId)
+      statusLog(logSection, `Parsing certifications data...`, scraperSessionId)
 
-      const rawVolunteerExperiences: RawVolunteerExperience[] = await page.$$eval('.pv-profile-section.volunteering-section ul > li.ember-view', (nodes) => {
+      await page.goto(`${profileUrl}/details/certifications/`, {
+        // Use "networkidl2" here and not "domcontentloaded". 
+        // As with "domcontentloaded" some elements might not be loaded correctly, resulting in missing data.
+        waitUntil: 'networkidle2',
+        timeout: this.options.timeout
+      });
+
+      const rawCertifications: RawCertification[] = await page.$$eval('ul.pvs-list > li.pvs-list__paged-list-item', (nodes) => {
         // Note: the $$eval context is the browser context.
         // So custom methods you define in this file are not available within this $$eval.
-        let data: RawVolunteerExperience[] = []
+        let data: RawCertification[] = []
         for (const node of nodes) {
 
-          const titleElement = node.querySelector('.pv-entity__summary-info h3');
+          const titleElement = node.querySelector('.t-bold span.visually-hidden');
           const title = titleElement?.textContent || null;
-          
-          const companyElement = node.querySelector('.pv-entity__summary-info span.pv-entity__secondary-title');
+
+          const companyElement = node.querySelector('.t-14:nth-child(2) span.visually-hidden');
           const company = companyElement?.textContent || null;
 
-          const dateRangeElement = node.querySelector('.pv-entity__date-range span:nth-child(2)');
+          const dateRangeElement = node.querySelector('.t-14:nth-child(3) span.visually-hidden');
           const dateRangeText = dateRangeElement?.textContent || null
-          const startDatePart = dateRangeText?.split('–')[0] || null;
-          const startDate = startDatePart?.trim() || null;
+          const issuedPart = dateRangeText?.split('·')[0] || null;
+          const issueDate = issuedPart?.replace('Issued', '').trim() || null;
 
-          const endDatePart = dateRangeText?.split('–')[1] || null;
-          const endDateIsPresent = endDatePart?.trim().toLowerCase() === 'present' || false;
-          const endDate = (endDatePart && !endDateIsPresent) ? endDatePart.trim() : 'Present';
+          const expiredPart = dateRangeText?.split('·')[1] || null;
+          const expireDate = expiredPart?.replace('Expires', '').replace('Expired', '').trim() || null;
 
-          const descriptionElement = node.querySelector('.pv-entity__description')
-          const description = descriptionElement?.textContent || null;
+          const idElement = node.querySelector('.t-14:nth-child(4) span.visually-hidden')
+          const id = idElement?.textContent?.replace('Credential ID', '')?.trim() || null;
+
+          const urlElement = node.querySelector('.artdeco-button--secondary')
+          const url = urlElement?.getAttribute('href') || null;
 
           data.push({
             title,
             company,
-            startDate,
-            endDate,
-            endDateIsPresent,
-            description
+            issueDate,
+            expireDate,
+            id,
+            url
           })
         }
 
@@ -796,36 +763,44 @@ export class LinkedInProfileScraper {
 
       // Convert the raw data to clean data using our utils
       // So we don't have to inject our util methods inside the browser context, which is too damn difficult using TypeScript
-      const volunteerExperiences: VolunteerExperience[] = rawVolunteerExperiences.map(rawVolunteerExperience => {
-        const startDate = formatDate(rawVolunteerExperience.startDate)
-        const endDate = formatDate(rawVolunteerExperience.endDate)
+      const certifications: Certification[] = rawCertifications.map(rawCertification => {
+        const issueDate = formatDate(rawCertification.issueDate)
+        const expireDate = formatDate(rawCertification.expireDate)
 
         return {
-          ...rawVolunteerExperience,
-          title: getCleanText(rawVolunteerExperience.title),
-          company: getCleanText(rawVolunteerExperience.company),
-          description: getCleanText(rawVolunteerExperience.description),
-          startDate,
-          endDate,
-          durationInDays: getDurationInDays(startDate, endDate),
+          ...rawCertification,
+          title: getCleanText(rawCertification.title),
+          company: getCleanText(rawCertification.company),
+          issueDate,
+          expireDate,
         }
       })
 
-      statusLog(logSection, `Got volunteer experience data: ${JSON.stringify(volunteerExperiences)}`, scraperSessionId)
+      statusLog(logSection, `Got certification data: ${JSON.stringify(certifications)}`, scraperSessionId)
 
       statusLog(logSection, `Parsing skills data...`, scraperSessionId)
 
-      const skills: Skill[] = await page.$$eval('.pv-skill-categories-section ol > .ember-view', nodes => {
+      await page.goto(`${profileUrl}/details/skills/`, {
+        // Use "networkidl2" here and not "domcontentloaded". 
+        // As with "domcontentloaded" some elements might not be loaded correctly, resulting in missing data.
+        waitUntil: 'networkidle2',
+        timeout: this.options.timeout
+      });
+
+      await autoScroll(page);
+
+      // To give a little room to let data appear. Setting this to 0 might result in "Node is detached from document" errors
+      await page.waitFor(1000);
+
+      const skills: Skill[] = await page.$$eval('ul.pvs-list > li.pvs-list__paged-list-item', nodes => {
         // Note: the $$eval context is the browser context.
         // So custom methods you define in this file are not available within this $$eval.
 
         return nodes.map((node) => {
-          const skillName = node.querySelector('.pv-skill-category-entity__name-text');
-          const endorsementCount = node.querySelector('.pv-skill-category-entity__endorsement-count');
+          const skillName = node.querySelector('.t-bold span.visually-hidden');
 
           return {
-            skillName: (skillName) ? skillName.textContent?.trim() : null,
-            endorsementCount: (endorsementCount) ? parseInt(endorsementCount.textContent?.trim() || '0') : 0
+            skillName: skillName?.textContent?.trim() || null,
           } as Skill;
         }) as Skill[]
       });
@@ -851,7 +826,7 @@ export class LinkedInProfileScraper {
         userProfile,
         experiences,
         education,
-        volunteerExperiences,
+        certifications,
         skills
       }
     } catch (err) {
